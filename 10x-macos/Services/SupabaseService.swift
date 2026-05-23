@@ -67,12 +67,12 @@ actor SupabaseService {
 
     private init() {
         client = SupabaseClient(
-            supabaseURL: URL(string: Config.supabaseURL)!,
-            supabaseKey: Config.supabaseAnonKey,
+            supabaseURL: URL(string: Config.supabaseConfigured ? Config.supabaseURL : "http://127.0.0.1")!,
+            supabaseKey: Config.supabaseConfigured ? Config.supabaseAnonKey : "disabled",
             options: SupabaseClientOptions(
                 auth: SupabaseClientOptions.AuthOptions(
                     storage: VolatileAuthLocalStorage(),
-                    emitLocalSessionAsInitialSession: false
+                    emitLocalSessionAsInitialSession: true
                 )
             )
         )

@@ -2,6 +2,7 @@ import SwiftUI
 
 enum SettingsSection: String, CaseIterable, Identifiable {
     case general = "General"
+    case connections = "Connections"
     case usage = "Usage"
     case billing = "Billing"
 
@@ -11,7 +12,7 @@ enum SettingsSection: String, CaseIterable, Identifiable {
         switch self {
         case .billing:
             return !Config.billingTestMode
-        case .general, .usage:
+        case .general, .usage, .connections:
             return true
         }
     }
@@ -19,12 +20,12 @@ enum SettingsSection: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: "gearshape"
+        case .connections: "network"
         case .usage: "chart.bar"
         case .billing: "creditcard"
         }
     }
 }
-
 struct SettingsView: View {
     @Binding var selectedSection: SettingsSection
 
@@ -117,6 +118,8 @@ struct SettingsView: View {
         switch selectedSection {
         case .general:
             GeneralSettingsView()
+        case .connections:
+            ConnectionsSettingsView()
         case .usage:
             UsageSettingsView()
         case .billing:

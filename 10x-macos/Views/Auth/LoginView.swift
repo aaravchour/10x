@@ -317,6 +317,35 @@ struct LoginView: View {
             .disabled(isAuthenticating)
             .opacity(isAuthenticating && !googleInFlight ? 0.6 : 1)
 
+            Button {
+                auth.skipSignIn()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.right.circle")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    Text("Continue without signing in")
+                        .font(Theme.geist(13, weight: .medium))
+                }
+                .foregroundStyle(Theme.textPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.authButtonHeight)
+                .contentShape(
+                    RoundedRectangle(cornerRadius: Self.authButtonCornerRadius, style: .continuous)
+                )
+            }
+            .buttonStyle(.plain)
+            .background(
+                RoundedRectangle(cornerRadius: Self.authButtonCornerRadius, style: .continuous)
+                    .fill(Color.white.opacity(0.06))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Self.authButtonCornerRadius, style: .continuous)
+                    .stroke(Color.white.opacity(0.10), lineWidth: 1)
+            )
+            .disabled(isAuthenticating)
+            .opacity(isAuthenticating ? 0.6 : 1)
+
             if let status = auth.signInStatusMessage {
                 HStack(spacing: 8) {
                     ProgressView()

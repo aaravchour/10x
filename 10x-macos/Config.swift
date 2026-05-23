@@ -59,6 +59,20 @@ enum Config {
             ?? "https://downloads.example.invalid/appcast.xml"
     }
 
+    static var sparklePublicEdKey: String {
+        ProcessInfo.processInfo.environment["SPARKLE_PUBLIC_ED_KEY"]
+            ?? Bundle.main.infoDictionary?["SUPublicEDKey"] as? String
+            ?? ""
+    }
+
+    static var sparkleUpdatesConfigured: Bool {
+        let feed = sparkleFeedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = sparklePublicEdKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isPlaceholderValue(feed), !isPlaceholderValue(key) else { return false }
+        guard let feedURL = URL(string: feed), feedURL.host?.contains("example.invalid") != true else { return false }
+        return !key.isEmpty
+    }
+
     static var defaultUpdateChannel: AppUpdateChannel {
         AppUpdateChannel.defaultChannel()
     }
@@ -86,6 +100,14 @@ enum Config {
             ?? "sb_publishable_your_key"
     }
 
+    static var supabaseConfigured: Bool {
+        let url = supabaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = supabaseAnonKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !isPlaceholderValue(url), !isPlaceholderValue(key) else { return false }
+        guard let parsed = URL(string: url), parsed.host?.contains("your-project-ref") != true else { return false }
+        return key != "sb_publishable_your_key"
+    }
+
     private static func boolValue(for key: String, defaultValue: Bool) -> Bool {
         let fallback = defaultValue ? "true" : "false"
         let rawValue = ProcessInfo.processInfo.environment[key]
@@ -108,5 +130,14 @@ enum Config {
             normalized.removeLast()
         }
         return normalized
+    }
+
+    private static func isPlaceholderValue(_ value: String) -> Bool {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty
+            || (trimmed.hasPrefix("$(") && trimmed.hasSuffix(")"))
+            || trimmed.contains("your-project-ref")
+            || trimmed.contains("example.invalid")
+            || trimmed.contains("your_key")
     }
 }

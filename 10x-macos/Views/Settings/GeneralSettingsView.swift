@@ -35,11 +35,15 @@ struct GeneralSettingsView: View {
                 .frame(width: 56, height: 56)
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(auth.userEmail ?? "No email on file")
+                    Text(auth.isGuestMode ? "Guest mode" : auth.userEmail ?? "No email on file")
                         .font(Theme.geist(18, weight: .semibold))
                         .foregroundStyle(Theme.textPrimary)
 
-                    if let plan = billing.currentPlan {
+                    if auth.isGuestMode {
+                        Text("Sign in to sync projects and manage billing.")
+                            .font(Theme.geist(12, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                    } else if let plan = billing.currentPlan {
                         HStack(spacing: Theme.spacingSM) {
                             Text(plan.name)
                                 .font(Theme.geist(12, weight: .medium))
@@ -59,6 +63,12 @@ struct GeneralSettingsView: View {
             }
 
             VStack(spacing: Theme.spacingSM) {
+                if auth.isGuestMode {
+                    SettingsInsetRow {
+                        accountRow(label: "Mode", value: "Guest")
+                    }
+                }
+
                 if let email = auth.userEmail {
                     SettingsInsetRow {
                         accountRow(label: "Email", value: email)
@@ -133,6 +143,13 @@ struct GeneralSettingsView: View {
                     SettingsInsetRow {
                         accountRow(label: "Feed", value: Config.sparkleFeedURL)
                     }
+
+                    SettingsInsetRow {
+                        accountRow(
+                            label: "Updater",
+                            value: Config.sparkleUpdatesConfigured ? "Configured" : "Disabled until feed and key are configured"
+                        )
+                    }
                 }
             }
         }
@@ -148,7 +165,7 @@ struct GeneralSettingsView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "rectangle.portrait.and.arrow.right")
                         .font(.system(size: 13))
-                    Text("Sign Out")
+                    Text(auth.isGuestMode ? "Sign In" : "Sign Out")
                         .font(Theme.geist(13, weight: .medium))
                 }
                 .foregroundStyle(Theme.error)
@@ -206,6 +223,7 @@ struct GeneralSettingsView: View {
     }
 
     private var initials: String {
+        if auth.isGuestMode { return "G" }
         guard let email = auth.userEmail else { return "?" }
         let parts = email.split(separator: "@").first?.split(separator: ".") ?? []
         if parts.count >= 2 {

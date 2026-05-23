@@ -456,61 +456,10 @@ actor GenerationService {
         let input: [String: Any]
     }
 
-    /// Call the Claude proxy and parse the NDJSON stream into text + tool_use blocks.
-    private func callClaudeProxy(
-        system: String,
-        messages: [[String: Any]],
-        tools: [[String: Any]],
-        requestOptions: RequestOptions,
-        maxTokens: Int,
-        accessToken: String,
-        projectId: String?,
-        sessionId: String?,
-        billingGroupId: String,
-        billingMessagePreview: String?,
+    private func parseClaudeStream(
+        rawLines: AsyncThrowingStream<String, Error>,
         onEvent: @MainActor @Sendable @escaping (GenerationEvent) async -> Void
     ) async throws -> StreamResult {
-        var body: [String: Any] = [
-            "system": system,
-            "messages": messages,
-            "tools": tools,
-            "max_tokens": maxTokens,
-            "idempotency_key": UUID().uuidString,
-            "billing_group_id": billingGroupId,
-        ]
-        if let billingMessagePreview, !billingMessagePreview.isEmpty {
-            body["billing_message_preview"] = billingMessagePreview
-        }
-        if let projectId {
-            body["project_id"] = projectId
-        }
-        if let sessionId {
-            body["session_id"] = sessionId
-        }
-        if let toolChoice = requestOptions.toolChoice {
-            body["tool_choice"] = toolChoice
-        }
-        if let thinking = requestOptions.thinking {
-            body["thinking"] = thinking
-        }
-        if let outputConfig = requestOptions.outputConfig {
-            body["output_config"] = outputConfig
-        }
-        if let cacheControl = requestOptions.cacheControl {
-            body["cache_control"] = cacheControl
-        }
-
-        print(
-            "[billing-debug] generation.proxy.request billingGroupId=\(billingGroupId) sessionId=\(sessionId ?? "nil") projectId=\(projectId ?? "nil") messageCount=\(messages.count) toolCount=\(tools.count) maxTokens=\(maxTokens)"
-        )
-
-        let rawLines = try await api.stream(
-            APIClient.builder("claude/stream"),
-            method: "POST",
-            json: body,
-            accessToken: accessToken
-        )
-
         var result = StreamResult()
         var currentBlockType: String?
         var currentToolId = ""
@@ -583,6 +532,81 @@ actor GenerationService {
                 break
             }
         }
+
+        return result
+    }
+
+    /// Call the Claude proxy and parse the NDJSON stream into text + tool_use blocks.
+    private func callClaudeProxy(
+        system: String,
+        messages: [[String: Any]],
+        tools: [[String: Any]],
+        requestOptions: RequestOptions,
+        maxTokens: Int,
+        accessToken: String,
+        projectId: String?,
+        sessionId: String?,
+        billingGroupId: String,
+        billingMessagePreview: String?,
+        onEvent: @MainActor @Sendable @escaping (GenerationEvent) async -> Void
+    ) async throws -> StreamResult {
+        // Check for a user-configured direct LLM connection
+        if let connection = await LLMConnectionService.shared.activeConnection {
+            print("[10x] Using direct LLM connection: \(connection.provider.displayName) \(connection.model)")
+            let client = DirectLLMClientFactory.client(for: connection)
+            let rawLines = try await client.stream(
+                system: system,
+                messages: messages,
+                tools: tools,
+                model: connection.model,
+                maxTokens: maxTokens,
+                onEvent: onEvent
+            )
+            return try await parseClaudeStream(rawLines: rawLines, onEvent: onEvent)
+        }
+
+        var body: [String: Any] = [
+            "system": system,
+            "messages": messages,
+            "tools": tools,
+            "max_tokens": maxTokens,
+            "idempotency_key": UUID().uuidString,
+            "billing_group_id": billingGroupId,
+        ]
+        if let billingMessagePreview, !billingMessagePreview.isEmpty {
+            body["billing_message_preview"] = billingMessagePreview
+        }
+        if let projectId {
+            body["project_id"] = projectId
+        }
+        if let sessionId {
+            body["session_id"] = sessionId
+        }
+        if let toolChoice = requestOptions.toolChoice {
+            body["tool_choice"] = toolChoice
+        }
+        if let thinking = requestOptions.thinking {
+            body["thinking"] = thinking
+        }
+        if let outputConfig = requestOptions.outputConfig {
+            body["output_config"] = outputConfig
+        }
+        if let cacheControl = requestOptions.cacheControl {
+            body["cache_control"] = cacheControl
+        }
+
+        print(
+            "[billing-debug] generation.proxy.request billingGroupId=\(billingGroupId) sessionId=\(sessionId ?? "nil") projectId=\(projectId ?? "nil") messageCount=\(messages.count) toolCount=\(tools.count) maxTokens=\(maxTokens)"
+        )
+
+        let rawLines = try await api.stream(
+            APIClient.builder("claude/stream"),
+            method: "POST",
+            json: body,
+            accessToken: accessToken
+        )
+
+        let result = try await parseClaudeStream(rawLines: rawLines, onEvent: onEvent)
 
         print(
             "[billing-debug] generation.proxy.response billingGroupId=\(billingGroupId) textChars=\(result.text.count) toolUses=\(result.toolUses.count)"

@@ -57,11 +57,13 @@ final class AuthManager {
     var userId: String?
     var userEmail: String?
     var authError: String?
+    var isGuestMode = false
 
     private let tokenKey = "tenx_access_token"
     private let refreshTokenKey = "tenx_refresh_token"
     private let userIdKey = "tenx_user_id"
     private let userEmailKey = "tenx_user_email"
+    private let guestModeKey = "tenx_guest_mode"
     private let callbackScheme = "app.10x.macos"
     private let callbackURLString = "app.10x.macos://auth/callback"
     private let authTokenStore = AuthTokenStore()
@@ -80,9 +82,12 @@ final class AuthManager {
     }
 
     init() {
-        startAuthStateObserver()
+        if Config.supabaseConfigured {
+            startAuthStateObserver()
+        }
 
-        if let saved = authTokenStore.string(for: tokenKey, allowUserInteraction: false), !saved.isEmpty {
+        if Config.supabaseConfigured,
+           let saved = authTokenStore.string(for: tokenKey, allowUserInteraction: false), !saved.isEmpty {
             accessToken = saved
             refreshToken = authTokenStore.string(for: refreshTokenKey, allowUserInteraction: false)
             userId = UserDefaults.standard.string(forKey: userIdKey)
@@ -107,16 +112,47 @@ final class AuthManager {
                 }
             }
         }
+
+        if !isAuthenticated, UserDefaults.standard.bool(forKey: guestModeKey) {
+            isGuestMode = true
+            isAuthenticated = true
+        }
     }
 
     func signInWithGoogle() {
+        isGuestMode = false
+        UserDefaults.standard.set(false, forKey: guestModeKey)
         startOAuthSignIn(provider: .google)
+    }
+
+    func skipSignIn() {
+        webAuthSession?.cancel()
+        activeSignInProvider = nil
+        accessToken = nil
+        refreshToken = nil
+        userId = nil
+        userEmail = nil
+        authError = nil
+        isGuestMode = true
+        isAuthenticated = true
+
+        authTokenStore.remove(tokenKey)
+        authTokenStore.remove(refreshTokenKey)
+        UserDefaults.standard.removeObject(forKey: userIdKey)
+        UserDefaults.standard.removeObject(forKey: userEmailKey)
+        UserDefaults.standard.set(true, forKey: guestModeKey)
     }
 
     private func startOAuthSignIn(provider: SignInProvider) {
         guard activeSignInProvider == nil || activeSignInProvider == provider else { return }
         activeSignInProvider = provider
         currentAppleNonce = nil
+
+        guard Config.supabaseConfigured else {
+            activeSignInProvider = nil
+            authError = "Supabase is not configured. Add SUPABASE_URL and SUPABASE_ANON_KEY, or continue without signing in."
+            return
+        }
 
         let supabaseURL = Config.supabaseURL
         guard !supabaseURL.isEmpty else {
@@ -208,6 +244,9 @@ final class AuthManager {
     }
 
     func signInWithApple() {
+        isGuestMode = false
+        UserDefaults.standard.set(false, forKey: guestModeKey)
+
         if !Config.useNativeAppleSignIn {
             startOAuthSignIn(provider: .apple)
             return
@@ -384,6 +423,9 @@ final class AuthManager {
     }
 
     func refreshSession() async -> Bool {
+        guard Config.supabaseConfigured else {
+            return false
+        }
         guard let refresh = refreshToken else {
             return false
         }
@@ -471,6 +513,8 @@ final class AuthManager {
         self.userId = userId
         self.userEmail = userEmail
         self.authError = nil
+        self.isGuestMode = false
+        UserDefaults.standard.set(false, forKey: guestModeKey)
 
         authTokenStore.set(accessToken, for: tokenKey)
         authTokenStore.set(refreshToken, for: refreshTokenKey)
@@ -538,6 +582,7 @@ final class AuthManager {
     }
 
     private func syncSessionToSupabaseSDK(accessToken: String, refreshToken: String?) async {
+        guard Config.supabaseConfigured else { return }
         guard let refreshToken, !refreshToken.isEmpty else { return }
 
         do {
@@ -553,6 +598,7 @@ final class AuthManager {
     }
 
     private func startAuthStateObserver() {
+        guard Config.supabaseConfigured else { return }
         authStateTask?.cancel()
         authStateTask = Task { [weak self] in
             guard let self else { return }
@@ -625,6 +671,9 @@ final class AuthManager {
     }
 
     private static func requestRefreshedSession(refreshToken: String) async throws -> RefreshedSessionPayload {
+        guard Config.supabaseConfigured else {
+            throw StartupAuthError.invalidConfiguration
+        }
         let supabaseURL = Config.supabaseURL
         guard !supabaseURL.isEmpty,
               let url = URL(string: "\(supabaseURL)/auth/v1/token?grant_type=refresh_token") else {
@@ -780,6 +829,7 @@ final class AuthManager {
         userId = nil
         userEmail = nil
         isAuthenticated = false
+        isGuestMode = false
         authError = nil
         webAuthSession = nil
 
@@ -787,6 +837,7 @@ final class AuthManager {
         authTokenStore.remove(refreshTokenKey)
         UserDefaults.standard.removeObject(forKey: userIdKey)
         UserDefaults.standard.removeObject(forKey: userEmailKey)
+        UserDefaults.standard.set(false, forKey: guestModeKey)
     }
 }
 

@@ -88,6 +88,7 @@ final class SparkleUpdaterCoordinator: NSObject, SPUUpdaterDelegate, @preconcurr
     }
 
     func activate() {
+        guard Config.sparkleUpdatesConfigured else { return }
         guard !hasActivated else { return }
         hasActivated = true
 
@@ -100,6 +101,7 @@ final class SparkleUpdaterCoordinator: NSObject, SPUUpdaterDelegate, @preconcurr
     }
 
     func checkForUpdates() {
+        guard Config.sparkleUpdatesConfigured else { return }
         activate()
 
         if let version = availableUpdatePrompt?.versionString {
