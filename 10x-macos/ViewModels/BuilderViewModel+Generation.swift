@@ -1190,7 +1190,7 @@ extension BuilderViewModel {
 
         case .toolCallStart(let toolUseId, let name):
             if !currentSegmentContent.isEmpty {
-                if !suppressIntermediateAssistantText || name == "ask_user" {
+                if !suppressIntermediateAssistantText && name != "ask_user" {
                     appendAssistantSegmentMessage(currentSegmentContent)
                 }
                 currentSegmentContent = ""
@@ -1305,11 +1305,6 @@ extension BuilderViewModel {
             }
             integrationApproval = nil
             questionQueue = QuestionQueue(questions: parsed, toolUseId: toolUseId)
-            if !currentSegmentContent.isEmpty {
-                if !suppressIntermediateAssistantText {
-                    appendAssistantSegmentMessage(currentSegmentContent)
-                }
-            }
             finalizePendingDependencyChecklistAnchorIfNeeded()
             pendingAssistantContent = ""
             currentSegmentContent = ""

@@ -219,6 +219,8 @@ enum BuilderToolDefinitions {
                 target audience, or choices between alternatives. You can batch related questions \
                 into a single call to save time, or ask one at a time for deeper exploration. \
                 Prefer multiple-choice questions with concrete options, and do not ask fully open-ended questions. \
+                Call this tool directly without writing the same questions in assistant text first; \
+                the app renders this tool as an answerable questionnaire. \
                 The user's responses will be returned as the tool result.
                 """,
             schema: objectSchema(

@@ -416,7 +416,7 @@ struct InlineQuestionView: View {
         guard !trimmedAnswer.isEmpty else { return }
 
         Task { @MainActor in
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             freeformInput = ""
             selectedOptions = []
             selectedSingleOption = nil
@@ -426,7 +426,7 @@ struct InlineQuestionView: View {
 
     private func skip() {
         Task { @MainActor in
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             viewModel.skipCurrentQuestion(accessToken: token)
         }
     }

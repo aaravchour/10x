@@ -41,7 +41,6 @@ struct ChatPanelView: View {
                                 confirmPlanSection
                                 activeGenerationSection
                                 liveBuildFixSection
-                                questionSection
                                 resumeSection
                                 dependencyReminderSection
 
@@ -78,9 +77,6 @@ struct ChatPanelView: View {
                         .onChange(of: viewModel.activeSteps.count) {
                             guard shouldFollowLive else { return }
                             scheduleScrollToBottom(with: proxy)
-                        }
-                        .onChange(of: viewModel.questionQueue?.currentIndex) {
-                            proxy.scrollTo("question", anchor: .bottom)
                         }
                         .onChange(of: viewModel.isGenerating) { _, generating in
                             if generating {
@@ -133,6 +129,8 @@ struct ChatPanelView: View {
                     }
                 }
             }
+
+            questionModalOverlay
         }
         .background(Theme.surfaceInset)
         .overlay(alignment: .bottom) {
@@ -751,17 +749,44 @@ struct ChatPanelView: View {
     // MARK: - Question
 
     @ViewBuilder
-    private var questionSection: some View {
+    private var questionModalOverlay: some View {
         if let queue = viewModel.questionQueue, let current = queue.currentQuestion {
-            InlineQuestionView(
-                question: current,
-                questionIndex: queue.currentIndex + 1,
-                totalQuestions: queue.totalCount,
-                currentAnswer: queue.answers[current.question],
-                canGoBack: queue.currentIndex > 0
-            )
-            .padding(.bottom, Theme.spacingSM)
-            .id("question")
+            ZStack {
+                Color.black.opacity(0.48)
+                    .ignoresSafeArea()
+
+                VStack(alignment: .leading, spacing: Theme.spacingMD) {
+                    HStack(spacing: Theme.spacingSM) {
+                        Image(systemName: "list.bullet.clipboard.fill")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(Theme.accent)
+
+                        Text("Quick Questionnaire")
+                            .font(Theme.geist(15, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+
+                        Spacer(minLength: 0)
+                    }
+
+                    InlineQuestionView(
+                        question: current,
+                        questionIndex: queue.currentIndex + 1,
+                        totalQuestions: queue.totalCount,
+                        currentAnswer: queue.answers[current.question],
+                        canGoBack: queue.currentIndex > 0
+                    )
+                }
+                .padding(Theme.spacingLG)
+                .frame(maxWidth: 520)
+                .background {
+                    RoundedRectangle(cornerRadius: Theme.radiusLG, style: .continuous)
+                        .fill(Theme.surface)
+                        .shadow(color: .black.opacity(0.28), radius: 28, x: 0, y: 18)
+                }
+                .padding(.horizontal, Theme.spacingXL)
+            }
+            .zIndex(2000)
+            .transition(.opacity.combined(with: .scale(scale: 0.98)))
         }
     }
 
