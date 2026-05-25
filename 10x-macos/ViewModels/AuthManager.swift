@@ -466,6 +466,18 @@ final class AuthManager {
         return nil
     }
 
+    func generationAccessToken() async -> String? {
+        if let token = await validAccessToken() {
+            return token
+        }
+
+        if LLMConnectionService.shared.hasActiveDirectConnection {
+            return LLMConnectionService.localDirectAccessToken
+        }
+
+        return nil
+    }
+
     private func fetchUser(accessToken: String) async {
         let supabaseURL = Config.supabaseURL
         guard !supabaseURL.isEmpty else { return }

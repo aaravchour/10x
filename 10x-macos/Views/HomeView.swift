@@ -1230,7 +1230,7 @@ struct HomeView: View {
         resumingDraft = nil
 
         Task {
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             if let project = draftProject {
                 // Resuming from a draft — clean up draft file and use existing project
                 await localStore.deleteOnboardingDraft(projectName: project.name, projectId: project.id)
@@ -1256,7 +1256,7 @@ struct HomeView: View {
         resumingDraft = nil
 
         Task {
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             if let project = draftProject {
                 await localStore.deleteOnboardingDraft(projectName: project.name, projectId: project.id)
                 onOpenProject(project, text, nil, nil, attachments)
@@ -1289,7 +1289,7 @@ struct HomeView: View {
             pendingPrompt = ""
             prompt = description
             Task {
-                guard let token = await auth.validAccessToken() else { return }
+                guard let token = await auth.generationAccessToken() else { return }
                 await viewModel.createProject(name: name, accessToken: token)
                 if let project = viewModel.activeProject {
                     await localStore.saveOnboardingDraft(draft, projectName: project.name, projectId: project.id)

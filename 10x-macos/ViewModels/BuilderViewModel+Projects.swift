@@ -3,6 +3,11 @@ import Foundation
 
 extension BuilderViewModel {
     func loadProjects(accessToken: String) async {
+        guard accessToken != LLMConnectionService.localDirectAccessToken else {
+            hasLoadedProjects = true
+            return
+        }
+
         isLoadingProjects = true
         defer {
             isLoadingProjects = false
@@ -171,6 +176,28 @@ extension BuilderViewModel {
     }
 
     func createProject(name: String, accessToken: String) async {
+        if accessToken == LLMConnectionService.localDirectAccessToken {
+            let now = ISO8601DateFormatter().string(from: Date())
+            let safeName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Untitled App" : name
+            let project = BuilderProject(
+                id: UUID().uuidString,
+                userId: "local-direct",
+                name: safeName,
+                description: nil,
+                slug: Self.slug(from: safeName),
+                platform: "ios",
+                status: "draft",
+                currentVersionId: nil,
+                settings: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            projects.insert(project, at: 0)
+            selectProject(project, accessToken: accessToken)
+            await saveLocally(touchChat: false)
+            return
+        }
+
         do {
             let userId = Self.userIdFromJWT(accessToken)
             guard let userId else {
@@ -185,6 +212,16 @@ extension BuilderViewModel {
         } catch {
             print("[10x] Failed to create project: \(error)")
         }
+    }
+
+    private static func slug(from name: String) -> String {
+        let scalars = name.lowercased().unicodeScalars.map { scalar -> Character in
+            CharacterSet.alphanumerics.contains(scalar) ? Character(scalar) : "-"
+        }
+        let collapsed = String(scalars)
+            .split(separator: "-")
+            .joined(separator: "-")
+        return collapsed.isEmpty ? "untitled-app" : collapsed
     }
 
     func importExistingProject(from selectionURL: URL, accessToken: String) async throws -> BuilderProject {

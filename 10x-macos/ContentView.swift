@@ -523,7 +523,7 @@ struct ContentView: View {
         preloadPreview(for: tab, project: project, viewModel: vm)
 
         Task { @MainActor in
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             vm.selectProject(project, accessToken: token)
 
             if let message = initialMessage, !message.isEmpty || !attachments.isEmpty {

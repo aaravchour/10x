@@ -754,7 +754,7 @@ struct ChatInputView: View {
         if let composerError, !composerError.isEmpty {
             return
         }
-        if billing.totalCredits <= 0 {
+        if billing.totalCredits <= 0 && !LLMConnectionService.shared.hasActiveDirectConnection {
             composerError = "You’re out of credits. Get a plan or credit pack to continue."
             openPlansAndPacks()
             return
@@ -765,7 +765,10 @@ struct ChatInputView: View {
         }
 
         Task { @MainActor in
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else {
+                composerError = "Sign in or activate a direct LLM connection to continue."
+                return
+            }
             let draftText = preparedDraft.text
 
             if let error = viewModel.sendMessage(

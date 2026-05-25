@@ -15,6 +15,7 @@ struct LLMModelFetchResult: Sendable {
 @MainActor
 final class LLMConnectionService {
     static let shared = LLMConnectionService()
+    nonisolated static let localDirectAccessToken = "__10x_direct_llm_local__"
     private nonisolated static let connectionsKey = "tenx.llm.connections"
     private nonisolated static let activeConnectionIDKey = "tenx.llm.activeConnectionID"
     private nonisolated static let keychainService = "app.10x.macos.llm-keys"
