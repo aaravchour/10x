@@ -55,6 +55,74 @@ extension BuilderViewModel {
         sessionAccessToken == LLMConnectionService.localDirectAccessToken
     }
 
+    private static func formattedQuestionnaireAnswers(from queue: QuestionQueue) -> String {
+        var lines = ["Questionnaire responses. Use these answers as the user's complete clarification set and do not re-ask these same questions:"]
+
+        for (index, question) in queue.questions.enumerated() {
+            let answer = queue.answers[question.question]?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let answer, !answer.isEmpty else { continue }
+            lines.append("\(index + 1). \(question.question)\nAnswer: \(answer)")
+        }
+
+        return lines.joined(separator: "\n\n")
+    }
+
+    private static func localWebSearch(query: String) async throws -> String {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "No search query provided." }
+        guard let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "https://duckduckgo.com/html/?q=\(encoded)")
+        else {
+            return "Invalid search query."
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 15
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let html = String(decoding: data, as: UTF8.self)
+        let text = strippedHTML(html)
+        let lines = text
+            .components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .prefix(40)
+            .joined(separator: "\n")
+
+        return lines.isEmpty ? "No search results found for \(trimmed)." : "Search results for \(trimmed):\n\(lines)"
+    }
+
+    private static func localScrapeURL(_ rawURL: String) async throws -> String {
+        let trimmed = rawURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmed), ["http", "https"].contains(url.scheme?.lowercased()) else {
+            return "Invalid URL."
+        }
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 20
+        request.setValue("Mozilla/5.0", forHTTPHeaderField: "User-Agent")
+
+        let (data, _) = try await URLSession.shared.data(for: request)
+        let html = String(decoding: data, as: UTF8.self)
+        let text = strippedHTML(html)
+        return String(text.prefix(12_000))
+    }
+
+    private static func strippedHTML(_ html: String) -> String {
+        html
+            .replacingOccurrences(of: #"(?is)<script.*?</script>"#, with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: #"(?is)<style.*?</style>"#, with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: #"<[^>]+>"#, with: "\n", options: .regularExpression)
+            .replacingOccurrences(of: "&amp;", with: "&")
+            .replacingOccurrences(of: "&quot;", with: "\"")
+            .replacingOccurrences(of: "&#39;", with: "'")
+            .replacingOccurrences(of: "&lt;", with: "<")
+            .replacingOccurrences(of: "&gt;", with: ">")
+            .replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     func retryLastMessage(accessToken: String) {
         guard let failedRequest = lastFailedRequest else { return }
         lastFailedRequest = nil
@@ -255,17 +323,7 @@ extension BuilderViewModel {
 
         if queue.isComplete {
             questionQueue = nil
-            let answerText: String
-            if queue.answers.count == 1, let only = queue.answers.values.first {
-                answerText = only
-            } else {
-                answerText = queue.questions
-                    .compactMap { q in
-                        guard let a = queue.answers[q.question] else { return nil }
-                        return "**\(q.question)**: \(a)"
-                    }
-                    .joined(separator: "\n\n")
-            }
+            let answerText = Self.formattedQuestionnaireAnswers(from: queue)
 
             if !activeSteps.isEmpty {
                 let answeredSteps = finalizeAnsweredQuestionSteps(activeSteps)
@@ -836,12 +894,10 @@ extension BuilderViewModel {
         )
         let activeIntegrationToolAvailability = self.integrationToolAvailability
         let requestOptions = BuilderGenerationRequestPlanner.requestOptionsForGeneration(requestType: requestType)
-        let usesLocalDirectLLM = accessToken == LLMConnectionService.localDirectAccessToken
         let generationTools = BuilderGenerationRequestPlanner.toolsForGeneration(
             requestType: requestType,
             mode: mode,
-            integrationAvailability: activeIntegrationToolAvailability,
-            allowsHostedBackendTools: !usesLocalDirectLLM
+            integrationAvailability: activeIntegrationToolAvailability
         )
         let shouldRefreshPreviewOnCompletion = Self.shouldRequestPreviewRefreshOnCompletion(
             previewRefreshOnCompletionOverride: previewRefreshOnCompletionOverride,
@@ -911,6 +967,9 @@ extension BuilderViewModel {
                 webSearchHandler: { query in
                     do {
                         let accessToken = await currentAccessToken()
+                        if accessToken == LLMConnectionService.localDirectAccessToken {
+                            return try await Self.localWebSearch(query: query)
+                        }
                         let response: [String: String] = try await api.post(
                             APIClient.builder("web-search"),
                             json: ["query": query],
@@ -924,6 +983,9 @@ extension BuilderViewModel {
                 urlScrapeHandler: { url in
                     do {
                         let accessToken = await currentAccessToken()
+                        if accessToken == LLMConnectionService.localDirectAccessToken {
+                            return try await Self.localScrapeURL(url)
+                        }
                         let response: [String: String] = try await api.post(
                             APIClient.builder("scrape-url"),
                             json: ["url": url],

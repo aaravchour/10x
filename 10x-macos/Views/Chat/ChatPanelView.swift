@@ -17,6 +17,10 @@ struct ChatPanelView: View {
     private let chatHeaderFadeHeight: CGFloat = 64
     private let composerHeightChangeThreshold: CGFloat = 1
 
+    private var canUseGenerationActions: Bool {
+        auth.isAuthenticated || LLMConnectionService.shared.hasActiveDirectConnection
+    }
+
     var body: some View {
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
@@ -633,10 +637,10 @@ struct ChatPanelView: View {
 
                 Spacer()
 
-                if auth.isAuthenticated {
+                if canUseGenerationActions {
                     Button {
                         Task { @MainActor in
-                            guard let token = await auth.validAccessToken() else { return }
+                            guard let token = await auth.generationAccessToken() else { return }
                             _ = viewModel.sendMessage("I'd like to refine the plan. Let me give you some feedback.", accessToken: token)
                         }
                     } label: {
@@ -655,7 +659,7 @@ struct ChatPanelView: View {
 
                     Button {
                         Task { @MainActor in
-                            guard let token = await auth.validAccessToken() else { return }
+                            guard let token = await auth.generationAccessToken() else { return }
                             _ = viewModel.sendMessage(
                                 "The plan looks great. Start building the app now.",
                                 accessToken: token,
@@ -812,10 +816,10 @@ struct ChatPanelView: View {
 
             Spacer()
 
-            if auth.isAuthenticated {
+            if canUseGenerationActions {
                 Button {
                     Task { @MainActor in
-                        guard let token = await auth.validAccessToken() else { return }
+                        guard let token = await auth.generationAccessToken() else { return }
                         _ = viewModel.sendMessage("Continue", accessToken: token)
                     }
                 } label: {
@@ -883,10 +887,10 @@ struct ChatPanelView: View {
                     .foregroundStyle(Theme.accent)
                 }
                 .buttonStyle(.plain)
-            } else if viewModel.lastFailedRequest != nil, auth.isAuthenticated {
+            } else if viewModel.lastFailedRequest != nil, canUseGenerationActions {
                 Button {
                     Task { @MainActor in
-                        guard let token = await auth.validAccessToken() else { return }
+                        guard let token = await auth.generationAccessToken() else { return }
                         viewModel.retryLastMessage(accessToken: token)
                     }
                 } label: {
