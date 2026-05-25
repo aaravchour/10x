@@ -432,6 +432,7 @@ extension BuilderViewModel {
               !chat.hasGeneratedTitle,
               !titleRequestsInFlight.contains(chat.id),
               let accessToken = sessionAccessToken,
+              accessToken != LLMConnectionService.localDirectAccessToken,
               let query = firstUserQuery(in: messages)
         else {
             return

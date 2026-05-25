@@ -72,13 +72,23 @@ enum BuilderGenerationRequestPlanner {
     static func toolsForGeneration(
         requestType: BuilderGenerationRequestType,
         mode: ProjectMode,
-        integrationAvailability: BuilderIntegrationToolAvailability = .none
+        integrationAvailability: BuilderIntegrationToolAvailability = .none,
+        allowsHostedBackendTools: Bool = true
     ) -> [[String: Any]] {
         _ = requestType
-        return BuilderToolDefinitions.tools(
+        let tools = BuilderToolDefinitions.tools(
             for: mode,
             integrationAvailability: integrationAvailability
         )
+
+        guard allowsHostedBackendTools else {
+            return tools.filter { tool in
+                guard let name = tool["name"] as? String else { return true }
+                return !["web_search", "scrape_url"].contains(name)
+            }
+        }
+
+        return tools
     }
 
     static func requestOptionsForGeneration(

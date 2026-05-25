@@ -51,6 +51,10 @@ extension BuilderViewModel {
         return trimmed.isEmpty ? accessToken : trimmed
     }
 
+    private var isUsingLocalDirectLLM: Bool {
+        sessionAccessToken == LLMConnectionService.localDirectAccessToken
+    }
+
     func retryLastMessage(accessToken: String) {
         guard let failedRequest = lastFailedRequest else { return }
         lastFailedRequest = nil
@@ -507,6 +511,8 @@ extension BuilderViewModel {
     }
 
     func persistToSupabase(projectId: String) async {
+        guard !isUsingLocalDirectLLM else { return }
+
         do {
             let (_, conversationId) = try await Self.withTimeout(
                 seconds: 5,
@@ -830,10 +836,12 @@ extension BuilderViewModel {
         )
         let activeIntegrationToolAvailability = self.integrationToolAvailability
         let requestOptions = BuilderGenerationRequestPlanner.requestOptionsForGeneration(requestType: requestType)
+        let usesLocalDirectLLM = accessToken == LLMConnectionService.localDirectAccessToken
         let generationTools = BuilderGenerationRequestPlanner.toolsForGeneration(
             requestType: requestType,
             mode: mode,
-            integrationAvailability: activeIntegrationToolAvailability
+            integrationAvailability: activeIntegrationToolAvailability,
+            allowsHostedBackendTools: !usesLocalDirectLLM
         )
         let shouldRefreshPreviewOnCompletion = Self.shouldRequestPreviewRefreshOnCompletion(
             previewRefreshOnCompletionOverride: previewRefreshOnCompletionOverride,
@@ -946,7 +954,9 @@ extension BuilderViewModel {
             )
 
             let promptAccessToken = await currentAccessToken()
-            let skillsCatalogSection = await skillsManager.catalogSection(accessToken: promptAccessToken)
+            let skillsCatalogSection = promptAccessToken == LLMConnectionService.localDirectAccessToken
+                ? nil
+                : await skillsManager.catalogSection(accessToken: promptAccessToken)
 
             let systemPrompt = BuilderPrompts.systemPrompt(mode: mode)
             let promptContext = BuilderPrompts.messageContext(

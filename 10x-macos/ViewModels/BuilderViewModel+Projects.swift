@@ -27,6 +27,12 @@ extension BuilderViewModel {
     }
 
     func loadAvailableSkills(accessToken: String) async {
+        guard accessToken != LLMConnectionService.localDirectAccessToken else {
+            availableSkills = []
+            isLoadingSkills = false
+            return
+        }
+
         guard !accessToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             availableSkills = []
             isLoadingSkills = false
@@ -444,6 +450,7 @@ extension BuilderViewModel {
 
     private func loadProjectData(projectId: String) async {
         guard let projectName = activeProject?.name else { return }
+        let isLocalDirectProject = sessionAccessToken == LLMConnectionService.localDirectAccessToken
 
         projectIcon = await localStore.loadCustomIcon(projectName: projectName, projectId: projectId)
         let projectDir = await previewService.projectDir(for: projectName, projectId: projectId)
@@ -482,6 +489,7 @@ extension BuilderViewModel {
         let hadLocalTree = hasLocalTree
 
         async let messagesTask: [BuilderMessage] = {
+            guard !isLocalDirectProject else { return [] }
             do {
                 let (msgs, _) = try await supabase.fetchConversation(projectId: projectId)
                 return msgs
@@ -492,6 +500,7 @@ extension BuilderViewModel {
         }()
 
         async let versionsTask: [BuilderVersion] = {
+            guard !isLocalDirectProject else { return [] }
             do {
                 return try await supabase.fetchVersions(projectId: projectId)
             } catch {
