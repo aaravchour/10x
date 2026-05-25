@@ -1015,10 +1015,10 @@ struct HomeView: View {
         isImportingProject = true
 
         Task {
-            guard let token = await auth.validAccessToken() else {
+            guard let token = await auth.generationAccessToken() else {
                 await MainActor.run {
                     isImportingProject = false
-                    promptComposerError = "Sign in before importing an existing project."
+                    promptComposerError = "Sign in or enable a direct LLM connection before importing an existing project."
                 }
                 return
             }

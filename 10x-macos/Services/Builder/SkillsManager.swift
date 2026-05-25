@@ -13,6 +13,11 @@ actor SkillsManager {
 
     /// Fetch the skill registry from the API (or return cached).
     func fetchRegistry(accessToken: String) async -> [SkillRegistryEntry] {
+        if accessToken == LLMConnectionService.localDirectAccessToken {
+            registryLoaded = true
+            return BundledSkillsCatalog.registry
+        }
+
         if !registryLoaded {
             do {
                 let response: SkillsListResponse = try await api.get(

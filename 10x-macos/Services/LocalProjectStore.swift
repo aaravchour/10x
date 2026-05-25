@@ -131,6 +131,77 @@ actor LocalProjectStore {
         Self.projectRootDirectory(projectName: projectName, projectId: projectId)
     }
 
+    func loadLocalProjects() -> [BuilderProject] {
+        let fileManager = FileManager.default
+        guard let projectDirs = try? fileManager.contentsOfDirectory(
+            at: Self.baseDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        let projects = projectDirs.compactMap { rootDir -> (BuilderProject, Date)? in
+            let metadataURL = rootDir
+                .appendingPathComponent("tenx", isDirectory: true)
+                .appendingPathComponent("project.json")
+            guard let data = try? Data(contentsOf: metadataURL),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let name = json["name"] as? String,
+                  let projectId = json["projectId"] as? String,
+                  !name.isEmpty,
+                  !projectId.isEmpty
+            else {
+                return nil
+            }
+
+            let updatedAt = (json["lastUpdated"] as? String) ?? ISO8601DateFormatter().string(from: Date())
+            let modified = (try? rootDir.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? Date.distantPast
+            let project = BuilderProject(
+                id: projectId,
+                userId: "local-direct",
+                name: name,
+                description: nil,
+                slug: (json["slug"] as? String) ?? XcodePreviewService.safeName(from: name),
+                platform: (json["platform"] as? String) ?? "ios",
+                status: (json["status"] as? String) ?? "draft",
+                currentVersionId: nil,
+                settings: nil,
+                createdAt: updatedAt,
+                updatedAt: updatedAt
+            )
+            return (project, modified)
+        }
+
+        return projects
+            .sorted { $0.1 > $1.1 }
+            .map { $0.0 }
+    }
+
+    func saveProjectMetadata(_ project: BuilderProject) {
+        let tenxDirectory = tenxDir(projectName: project.name, projectId: project.id)
+        do {
+            try ensureDir(tenxDirectory)
+            let metadata: [String: Any] = [
+                "name": project.name,
+                "slug": project.slug,
+                "targetName": XcodePreviewService.targetName(from: project.name),
+                "bundleId": XcodePreviewService.bundleId(from: project.name),
+                "projectId": project.id,
+                "platform": project.platform,
+                "status": project.status,
+                "lastUpdated": project.updatedAt,
+            ]
+            let data = try JSONSerialization.data(
+                withJSONObject: metadata,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+            try data.write(to: tenxDirectory.appendingPathComponent("project.json"), options: [.atomic])
+        } catch {
+            print("Failed to save local project metadata: \(error)")
+        }
+    }
+
     nonisolated static func projectRootDirectory(projectName: String, projectId: String) -> URL {
         let safeName = XcodePreviewService.safeName(from: projectName)
         let dirName = "\(safeName)-\(projectId.prefix(8))"

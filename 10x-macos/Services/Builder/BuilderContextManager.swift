@@ -966,6 +966,10 @@ final class BuilderContextManager {
             payload["cache_control"] = cacheControl
         }
 
+        guard accessToken != LLMConnectionService.localDirectAccessToken else {
+            return nil
+        }
+
         do {
             let response: TokenCountResponse = try await api.post(
                 APIClient.builder("claude/count-tokens"),

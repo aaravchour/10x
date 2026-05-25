@@ -295,7 +295,7 @@ struct ChatInputView: View {
             syncPickerPresentations()
         }
         .task(id: auth.accessToken) {
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             await viewModel.loadAvailableSkills(accessToken: token)
             syncPickerPresentations()
         }

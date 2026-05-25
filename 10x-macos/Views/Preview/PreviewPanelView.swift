@@ -11,10 +11,10 @@ struct PreviewPanelView: View {
     }
 
     private var buildIssueFixAction: (() -> Void)? {
-        guard auth.isAuthenticated else { return nil }
+        guard auth.isAuthenticated || LLMConnectionService.shared.hasActiveDirectConnection else { return nil }
         return {
             Task { @MainActor in
-                guard let token = await auth.validAccessToken() else { return }
+                guard let token = await auth.generationAccessToken() else { return }
                 viewModel.fixBuildError(accessToken: token)
             }
         }

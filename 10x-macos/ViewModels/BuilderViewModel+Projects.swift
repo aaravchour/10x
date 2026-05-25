@@ -2,8 +2,15 @@ import AppKit
 import Foundation
 
 extension BuilderViewModel {
+    private var isLocalDirectMode: Bool {
+        sessionAccessToken == LLMConnectionService.localDirectAccessToken
+    }
+
     func loadProjects(accessToken: String) async {
         guard accessToken != LLMConnectionService.localDirectAccessToken else {
+            let localProjects = await localStore.loadLocalProjects()
+            projects = localProjects.filter { $0.status != "archived" }
+            archivedProjects = localProjects.filter { $0.status == "archived" }
             hasLoadedProjects = true
             return
         }
@@ -50,6 +57,18 @@ extension BuilderViewModel {
     }
 
     func archiveProject(_ project: BuilderProject) async {
+        if isLocalDirectMode {
+            let archivedProject = Self.updatedProject(project, status: "archived")
+            projects.removeAll { $0.id == project.id }
+            upsertProject(archivedProject, in: &archivedProjects)
+            if activeProject?.id == archivedProject.id {
+                activeProject = archivedProject
+                await saveLocally(touchChat: false)
+            }
+            await localStore.saveProjectMetadata(archivedProject)
+            return
+        }
+
         do {
             let archivedProject = try await supabase.archiveProject(id: project.id)
             projects.removeAll { $0.id == project.id }
@@ -63,6 +82,18 @@ extension BuilderViewModel {
     }
 
     func unarchiveProject(_ project: BuilderProject) async {
+        if isLocalDirectMode {
+            let restoredProject = Self.updatedProject(project, status: "draft")
+            archivedProjects.removeAll { $0.id == project.id }
+            upsertProject(restoredProject, in: &projects)
+            if activeProject?.id == restoredProject.id {
+                activeProject = restoredProject
+                await saveLocally(touchChat: false)
+            }
+            await localStore.saveProjectMetadata(restoredProject)
+            return
+        }
+
         do {
             let restoredProject = try await supabase.unarchiveProject(id: project.id)
             archivedProjects.removeAll { $0.id == project.id }
@@ -76,6 +107,30 @@ extension BuilderViewModel {
     }
 
     func deleteProject(_ project: BuilderProject) async {
+        if isLocalDirectMode {
+            projects.removeAll { $0.id == project.id }
+            archivedProjects.removeAll { $0.id == project.id }
+            if activeProject?.id == project.id {
+                activeProject = nil
+                localProjectPath = nil
+                previewScreenshot = nil
+                lastPreviewedFileTreeRevision = nil
+                projectWarnings = []
+                productionChecklistState = .empty
+                appStoreReviewState = .empty
+                appStoreReviewStatus = nil
+                appStoreReviewError = nil
+                appStoreSubmissionDraft = .empty
+                appStoreSubmissionStatus = nil
+                appStoreSubmissionError = nil
+                isGeneratingAppStoreSubmission = false
+                isPublishingAppStoreSubmission = false
+                reviewAssetImageCache = [:]
+            }
+            await localStore.deleteProjectData(projectName: project.name, projectId: project.id)
+            return
+        }
+
         do {
             try await supabase.deleteProject(id: project.id)
             projects.removeAll { $0.id == project.id }
@@ -120,7 +175,15 @@ extension BuilderViewModel {
         do {
             let finalProject: BuilderProject
             if trimmedName != project.name {
-                finalProject = try await supabase.updateProject(id: project.id, data: UpdateProjectData(name: trimmedName))
+                if isLocalDirectMode {
+                    finalProject = Self.updatedProject(
+                        project,
+                        name: trimmedName,
+                        slug: Self.slug(from: trimmedName)
+                    )
+                } else {
+                    finalProject = try await supabase.updateProject(id: project.id, data: UpdateProjectData(name: trimmedName))
+                }
             } else {
                 finalProject = project
             }
@@ -150,6 +213,9 @@ extension BuilderViewModel {
             }
 
             replaceProject(finalProject)
+            if isLocalDirectMode {
+                await localStore.saveProjectMetadata(finalProject)
+            }
 
             if activeProject?.id == project.id {
                 projectIcon = customIcon
@@ -199,6 +265,7 @@ extension BuilderViewModel {
                 updatedAt: now
             )
             projects.insert(project, at: 0)
+            await localStore.saveProjectMetadata(project)
             selectProject(project, accessToken: accessToken)
             await saveLocally(touchChat: false)
             return
@@ -231,12 +298,49 @@ extension BuilderViewModel {
     }
 
     func importExistingProject(from selectionURL: URL, accessToken: String) async throws -> BuilderProject {
+        let selection = try await projectImporter.resolveSelection(at: selectionURL)
+        try await projectImporter.validateSwiftUISources(at: selection.rootURL)
+
+        if accessToken == LLMConnectionService.localDirectAccessToken {
+            let now = ISO8601DateFormatter().string(from: Date())
+            let baseProject = BuilderProject(
+                id: UUID().uuidString,
+                userId: "local-direct",
+                name: selection.displayName,
+                description: nil,
+                slug: Self.slug(from: selection.displayName),
+                platform: "ios",
+                status: "draft",
+                currentVersionId: nil,
+                settings: nil,
+                createdAt: now,
+                updatedAt: now
+            )
+            let projectRoot = try await previewService.scaffoldProjectDirectory(
+                projectName: baseProject.name,
+                projectId: baseProject.id
+            )
+            let importResult = try await projectImporter.importProject(
+                from: selection,
+                into: projectRoot
+            )
+            let project = Self.updatedProject(
+                baseProject,
+                settings: importResult.metadata.settingsDictionary
+            )
+            await localStore.saveFileTree(
+                importResult.fileTree,
+                projectName: project.name,
+                projectId: project.id
+            )
+            await localStore.saveProjectMetadata(project)
+            upsertProject(project, in: &projects)
+            return project
+        }
+
         guard let userId = Self.userIdFromJWT(accessToken) else {
             throw ExistingProjectImportError.invalidSelection("You need a valid session before importing a project.")
         }
-
-        let selection = try await projectImporter.resolveSelection(at: selectionURL)
-        try await projectImporter.validateSwiftUISources(at: selection.rootURL)
 
         let createdProject = try await supabase.createProject(
             userId: userId,
@@ -640,6 +744,28 @@ extension BuilderViewModel {
         list.insert(updated, at: 0)
     }
 
+    private static func updatedProject(
+        _ project: BuilderProject,
+        name: String? = nil,
+        slug: String? = nil,
+        status: String? = nil,
+        settings: [String: AnyCodableValue]? = nil
+    ) -> BuilderProject {
+        BuilderProject(
+            id: project.id,
+            userId: project.userId,
+            name: name ?? project.name,
+            description: project.description,
+            slug: slug ?? project.slug,
+            platform: project.platform,
+            status: status ?? project.status,
+            currentVersionId: project.currentVersionId,
+            settings: settings ?? project.settings,
+            createdAt: project.createdAt,
+            updatedAt: ISO8601DateFormatter().string(from: Date())
+        )
+    }
+
     func focusEnvironmentIntegration(_ integrationID: ProjectIntegrationID?) {
         pendingEnvironmentIntegrationFocus = integrationID
         viewMode = .environment
@@ -662,14 +788,20 @@ extension BuilderViewModel {
             mergedSettings.removeValue(forKey: BuilderProject.dependencyManifestSettingsKey)
         }
 
-        do {
-            let updatedProject = try await supabase.updateProject(
-                id: project.id,
-                data: UpdateProjectData(settings: mergedSettings.isEmpty ? nil : mergedSettings)
-            )
+        if isLocalDirectMode {
+            let updatedProject = Self.updatedProject(project, settings: mergedSettings.isEmpty ? nil : mergedSettings)
             replaceProject(updatedProject)
-        } catch {
-            print("Failed to save dependency manifest: \(error)")
+            await localStore.saveProjectMetadata(updatedProject)
+        } else {
+            do {
+                let updatedProject = try await supabase.updateProject(
+                    id: project.id,
+                    data: UpdateProjectData(settings: mergedSettings.isEmpty ? nil : mergedSettings)
+                )
+                replaceProject(updatedProject)
+            } catch {
+                print("Failed to save dependency manifest: \(error)")
+            }
         }
 
         await saveLocally(touchChat: false)
@@ -687,14 +819,20 @@ extension BuilderViewModel {
             mergedSettings.removeValue(forKey: BuilderProject.backendStateSettingsKey)
         }
 
-        do {
-            let updatedProject = try await supabase.updateProject(
-                id: project.id,
-                data: UpdateProjectData(settings: mergedSettings.isEmpty ? nil : mergedSettings)
-            )
+        if isLocalDirectMode {
+            let updatedProject = Self.updatedProject(project, settings: mergedSettings.isEmpty ? nil : mergedSettings)
             replaceProject(updatedProject)
-        } catch {
-            print("Failed to save backend state: \(error)")
+            await localStore.saveProjectMetadata(updatedProject)
+        } else {
+            do {
+                let updatedProject = try await supabase.updateProject(
+                    id: project.id,
+                    data: UpdateProjectData(settings: mergedSettings.isEmpty ? nil : mergedSettings)
+                )
+                replaceProject(updatedProject)
+            } catch {
+                print("Failed to save backend state: \(error)")
+            }
         }
 
         await saveLocally(touchChat: false)
@@ -712,14 +850,20 @@ extension BuilderViewModel {
             mergedSettings.removeValue(forKey: BuilderProject.superwallStateSettingsKey)
         }
 
-        do {
-            let updatedProject = try await supabase.updateProject(
-                id: project.id,
-                data: UpdateProjectData(settings: mergedSettings.isEmpty ? nil : mergedSettings)
-            )
+        if isLocalDirectMode {
+            let updatedProject = Self.updatedProject(project, settings: mergedSettings.isEmpty ? nil : mergedSettings)
             replaceProject(updatedProject)
-        } catch {
-            print("Failed to save Superwall state: \(error)")
+            await localStore.saveProjectMetadata(updatedProject)
+        } else {
+            do {
+                let updatedProject = try await supabase.updateProject(
+                    id: project.id,
+                    data: UpdateProjectData(settings: mergedSettings.isEmpty ? nil : mergedSettings)
+                )
+                replaceProject(updatedProject)
+            } catch {
+                print("Failed to save Superwall state: \(error)")
+            }
         }
 
         await saveLocally(touchChat: false)

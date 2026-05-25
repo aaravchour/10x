@@ -190,7 +190,7 @@ struct ContentView: View {
         .ignoresSafeArea(.all, edges: .top)
         .background(TrafficLightPositioner(barHeight: TabBarPalette.segmentHeight))
         .task(id: auth.accessToken) {
-            guard let token = await auth.validAccessToken() else {
+            guard let token = await auth.generationAccessToken() else {
                 syncSessionAccessTokens(nil)
                 billingViewModel.clear()
                 tabs = []
@@ -201,6 +201,7 @@ struct ContentView: View {
             }
 
             syncSessionAccessTokens(token)
+            let isLocalDirectMode = token == LLMConnectionService.localDirectAccessToken
 
             Task.detached(priority: .utility) {
                 await SimulatorPreviewService.shared.prewarmOnAppLaunchIfNeeded()
@@ -215,6 +216,11 @@ struct ContentView: View {
 
             if needsTabRestore {
                 restoreTabs(accessToken: token)
+            }
+
+            guard !isLocalDirectMode else {
+                billingViewModel.clear()
+                return
             }
 
             if let pendingBillingURL = BillingDeepLinkStore.shared.consume() {
@@ -262,6 +268,7 @@ struct ContentView: View {
         vm.projects = homeViewModel.projects
         vm.archivedProjects = homeViewModel.archivedProjects
         vm.billingRefreshHandler = { [billingViewModel, auth] captureDelta in
+            guard !LLMConnectionService.shared.hasActiveDirectConnection || !auth.isGuestMode else { return }
             guard let token = await auth.validAccessToken() else { return }
             await billingViewModel.refresh(accessToken: token, captureDelta: captureDelta)
         }

@@ -467,6 +467,10 @@ final class AuthManager {
     }
 
     func generationAccessToken() async -> String? {
+        if LLMConnectionService.shared.hasActiveDirectConnection && (isGuestMode || accessToken?.isEmpty != false) {
+            return LLMConnectionService.localDirectAccessToken
+        }
+
         if let token = await validAccessToken() {
             return token
         }

@@ -101,7 +101,7 @@ struct IntegrationApprovalView: View {
 
     private func respond(approved: Bool) {
         Task { @MainActor in
-            guard let token = await auth.validAccessToken() else { return }
+            guard let token = await auth.generationAccessToken() else { return }
             viewModel.respondToIntegrationApproval(approved, accessToken: token)
         }
     }
